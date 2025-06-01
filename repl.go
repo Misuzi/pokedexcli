@@ -4,16 +4,18 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"internal/cache" // Adjust the import path as necessary
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config) error
+	callback    func(*config, *cache.Cache) error
 }
 
 type config struct {
@@ -65,6 +67,8 @@ func repl() {
 		},
 	}
 
+	cache_ptr := cache.NewCache(5 * time.Second) // 5 seconds in nanoseconds
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -78,7 +82,7 @@ func repl() {
 		}
 		command := input_slice[0]
 		if cmd, exists := cliCommands[command]; exists {
-			if err := cmd.callback(&repl_config); err != nil {
+			if err := cmd.callback(&repl_config, cache_ptr); err != nil {
 				fmt.Printf("Error executing command '%s': %v\n", command, err)
 			}
 		} else {
@@ -97,14 +101,14 @@ func cleanInput(text string) []string {
 }
 
 // Callback function to handle the exit command
-func commandExit(c *config) error {
+func commandExit(c *config, cache *cache.Cache) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	defer os.Exit(0)
 	return nil
 }
 
 // Callback function to handle the help command
-func commandHelp(c *config) error {
+func commandHelp(c *config, cache *cache.Cache) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\nhelp: Displays a help message\nexit: Exit the Pokedex\n")
 	//fmt.Println("Available commands:")
 	//for _, cmd := range cliCommands {
@@ -113,7 +117,7 @@ func commandHelp(c *config) error {
 	return nil
 }
 
-func commandMap(c *config) error {
+func commandMap(c *config, cache *cache.Cache) error {
 	// This function is a placeholder for the map command.
 	// It would typically display a map of the Pokedex or related information.
 	//fmt.Println("Displaying the map...")
@@ -124,8 +128,8 @@ func commandMap(c *config) error {
 		fetch_URL = c.Next_URL
 	}
 
-	// Fetch the map data from the API
-	body_data, err := fetch_data(fetch_URL)
+	// Fetch the map data from the API// Fetch the map data from the API
+	body_data, err := fetch_data(fetch_URL, cache)
 	if err != nil {
 		return fmt.Errorf("failed to fetch map data: %v", err)
 	}
@@ -142,7 +146,7 @@ func commandMap(c *config) error {
 	return nil
 }
 
-func commandMapb(c *config) error {
+func commandMapb(c *config, cache *cache.Cache) error {
 	// This function is a placeholder for the map command.
 	// It would typically display a map of the Pokedex or related information.
 	//fmt.Println("Displaying the map...")
@@ -155,7 +159,7 @@ func commandMapb(c *config) error {
 	}
 
 	// Fetch the map data from the API
-	body_data, err := fetch_data(fetch_URL)
+	body_data, err := fetch_data(fetch_URL, cache)
 	if err != nil {
 		return fmt.Errorf("failed to fetch map data: %v", err)
 	}
@@ -172,7 +176,18 @@ func commandMapb(c *config) error {
 	return nil
 }
 
-func fetch_data(url string) (Map_response_body, error) {
+func fetch_data(url string, cache *cache.Cache) (Map_response_body, error) {
+
+	if cachedData, found := cache.Get(url); found {
+		var data Map_response_body
+		err := json.Unmarshal(cachedData, &data)
+		if err != nil {
+			return Map_response_body{}, fmt.Errorf("failed to unmarshal cached data: %v", err)
+		}
+		fmt.Printf("USING CACHED DATA\n")
+		return data, nil
+	}
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return Map_response_body{}, err
@@ -193,6 +208,10 @@ func fetch_data(url string) (Map_response_body, error) {
 	if err != nil {
 		return Map_response_body{}, err
 	}
+
+	// Add the fetched data to the cache
+	cache.Add(url, body)
+	fmt.Printf("SAVING CACHED DATA\n")
 
 	return data, nil
 }
