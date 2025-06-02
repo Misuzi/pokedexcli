@@ -15,7 +15,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config, *cache.Cache) error
+	callback    func([]string, *config, *cache.Cache) error
 }
 
 type config struct {
@@ -65,6 +65,11 @@ func repl() {
 			description: "Display the previous map of the Pokedex",
 			callback:    commandMapb,
 		},
+		"explore": {
+			name:        "explore",
+			description: "Explore the Pokedex",
+			callback:    commandExplore,
+		},
 	}
 
 	cache_ptr := cache.NewCache(5 * time.Second) // 5 seconds in nanoseconds
@@ -80,9 +85,11 @@ func repl() {
 			fmt.Println("No input provided. Please enter a command.")
 			continue
 		}
+
 		command := input_slice[0]
+		args := input_slice[1:]
 		if cmd, exists := cliCommands[command]; exists {
-			if err := cmd.callback(&repl_config, cache_ptr); err != nil {
+			if err := cmd.callback(args, &repl_config, cache_ptr); err != nil {
 				fmt.Printf("Error executing command '%s': %v\n", command, err)
 			}
 		} else {
@@ -100,82 +107,6 @@ func cleanInput(text string) []string {
 	return output_strings
 }
 
-// Callback function to handle the exit command
-func commandExit(c *config, cache *cache.Cache) error {
-	fmt.Println("Closing the Pokedex... Goodbye!")
-	defer os.Exit(0)
-	return nil
-}
-
-// Callback function to handle the help command
-func commandHelp(c *config, cache *cache.Cache) error {
-	fmt.Print("Welcome to the Pokedex!\nUsage:\n\nhelp: Displays a help message\nexit: Exit the Pokedex\n")
-	//fmt.Println("Available commands:")
-	//for _, cmd := range cliCommands {
-	//	fmt.Printf("- %s: %s\n", cmd.name, cmd.description)
-	//}
-	return nil
-}
-
-func commandMap(c *config, cache *cache.Cache) error {
-	// This function is a placeholder for the map command.
-	// It would typically display a map of the Pokedex or related information.
-	//fmt.Println("Displaying the map...")
-
-	// If map has been fetched before, use the stored URLs
-	fetch_URL := "https://pokeapi.co/api/v2/location-area?limit=20"
-	if c.Next_URL != "" {
-		fetch_URL = c.Next_URL
-	}
-
-	// Fetch the map data from the API// Fetch the map data from the API
-	body_data, err := fetch_data(fetch_URL, cache)
-	if err != nil {
-		return fmt.Errorf("failed to fetch map data: %v", err)
-	}
-
-	// Set the Next and Previous URLs in the config
-	c.Next_URL = body_data.Next
-	c.Previous_URL = body_data.Previous
-
-	// Display the results
-	for _, result := range body_data.Results {
-		fmt.Printf("%s\n", result.Name)
-	}
-
-	return nil
-}
-
-func commandMapb(c *config, cache *cache.Cache) error {
-	// This function is a placeholder for the map command.
-	// It would typically display a map of the Pokedex or related information.
-	//fmt.Println("Displaying the map...")
-
-	// If map has been fetched before, use the stored URLs
-	fetch_URL := c.Previous_URL
-	if fetch_URL == "" {
-		fmt.Println("you're on the first page")
-		return nil
-	}
-
-	// Fetch the map data from the API
-	body_data, err := fetch_data(fetch_URL, cache)
-	if err != nil {
-		return fmt.Errorf("failed to fetch map data: %v", err)
-	}
-
-	// Set the Next and Previous URLs in the config
-	c.Next_URL = body_data.Next
-	c.Previous_URL = body_data.Previous
-
-	// Display the results
-	for _, result := range body_data.Results {
-		fmt.Printf("%s\n", result.Name)
-	}
-
-	return nil
-}
-
 func fetch_data(url string, cache *cache.Cache) (Map_response_body, error) {
 
 	if cachedData, found := cache.Get(url); found {
@@ -184,7 +115,6 @@ func fetch_data(url string, cache *cache.Cache) (Map_response_body, error) {
 		if err != nil {
 			return Map_response_body{}, fmt.Errorf("failed to unmarshal cached data: %v", err)
 		}
-		fmt.Printf("USING CACHED DATA\n")
 		return data, nil
 	}
 
@@ -211,7 +141,6 @@ func fetch_data(url string, cache *cache.Cache) (Map_response_body, error) {
 
 	// Add the fetched data to the cache
 	cache.Add(url, body)
-	fmt.Printf("SAVING CACHED DATA\n")
 
 	return data, nil
 }
